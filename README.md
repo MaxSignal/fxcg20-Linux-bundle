@@ -1,21 +1,24 @@
 # fxcg20-linux-bundle
 
 Builds everything needed to run Linux on a Casio fx-CG10 / fx-CG20 (Prizm):
-the toolchain, the kernel with a BusyBox root filesystem built in, and the
-loader add-in, boots them on an emulator, and zips the two files to copy to
-the calculator. The fx-CG50 is not supported yet.
+the toolchain, the kernel with a BusyBox root filesystem built in, the
+same kernel and root file system made to run in place from the flash, and
+the loader add-in, boots them on an emulator, and zips the files to copy
+to the calculator. The fx-CG50 is not supported yet.
 
 ![BusyBox on the emulated fx-CG20](docs/emulator-shell.png)
 
 | File | |
 |---|---|
 | `fxcglinux.g3a` | Loader add-in, started from the main menu |
-| `linux.bin` | Kernel (zImage) with the BusyBox initramfs |
+| `linux.bin` | Kernel (zImage) with the BusyBox initramfs, loaded into RAM |
+| `xip.bin` | Kernel and romfs that run in place from the flash (optional, below) |
 
-Both go to the root of the storage memory. The system is BusyBox 1.36
+They go to the root of the storage memory. The system is BusyBox 1.36
 (hush, vi, coreutils, `ps`, `free`, `mount`…) on Linux 7.2, with the LCD
 and the keyboard as the console. About 330 KiB of the 2 MiB of RAM are
-free once the shell is up.
+free once the shell is up with `linux.bin`, about 1.3 MiB with the kernel
+in the flash.
 
 > **Status:** everything boots on the emulator in CI, down to running a
 > command typed on the key matrix. It has not been tried on a real
@@ -62,6 +65,38 @@ There is no way back to the Casio OS except a reset (the button on the back,
 or `reboot`). Linux uses all of the RAM, so **the Main Memory may be lost:
 back the calculator up first.** The storage memory is never written.
 
+### The kernel in the flash
+
+The NOR flash has room the Casio OS does not use: between the end of the
+OS image (0x710000 with OS 02.02) and the language data at 0xb40000, it
+is erased. `xip.bin` puts the kernel and a romfs root file system there,
+and both run in place: the kernel's code and read-only data, and every
+program's code, stay in the flash; only writable data takes RAM. That
+leaves about 1.3 MiB of the 2 MiB free instead of 330 KiB.
+
+The loader's menu:
+
+| Key | |
+|---|---|
+| **F1** | boot `linux.bin` (in RAM) |
+| **F2** | boot the kernel in the flash. When it is not there yet, or `xip.bin` in the storage memory is a different one, `linux.bin` boots first, writes it (`cat /mnt/fls/xip.bin > /dev/xipflash`) and starts it |
+| **F6** | boot `linux.bin` to remove it: the flash is erased again, as it was |
+| EXE | F2 if there is something to boot or install there, F1 otherwise |
+
+The loader itself never writes to the flash: its own code and the Casio
+OS run from it. Linux, running from RAM, does (`/dev/xipflash`), and only
+ever erases sectors that are already erased or that hold its own image;
+anything else makes it stop before the flash is touched. Its two headers
+(at both ends of the image) keep an install that is cut short
+recoverable: installing again works. A Casio OS update may erase the
+image; nothing else uses that part of the flash.
+
+Layout, packed downwards from 0xb40000 (`scripts/mkxip.py`): a header in
+the last 256 bytes, the kernel on a 128 KiB sector, the romfs below it,
+and a copy of the header at the start of the image. Only the start
+moves with the sizes: the kernel is linked where its size puts it, the
+romfs and the FDPIC programs in it run wherever they are.
+
 ### Fitting in 2 MiB
 
 - nommu: no page tables; programs are FDPIC and run in place from the
@@ -85,6 +120,7 @@ sudo apt install build-essential bison flex bc texinfo libgmp-dev libmpfr-dev \
 scripts/build-toolchain.sh  # work/toolchain (20-40 minutes, once)
 scripts/build-rootfs.sh     # out/busybox, out/initramfs.list
 scripts/build-kernel.sh     # out/linux.bin (needs the rootfs)
+scripts/build-xip.sh        # out/xip.bin: kernel + romfs in place (needs the rootfs)
 scripts/build-loader.sh     # out/fxcglinux.g3a
 scripts/boot-test.sh        # boot test on the emulator (needs Go)
 scripts/package.sh          # out/fxcg20-linux-<kernel>.zip
@@ -131,8 +167,17 @@ work/cgemu linux -g3a out/fxcglinux.g3a -file out/linux.bin -font out/font6x8.h 
 
 `-type` is typed with the key layout below (`\n` is EXE, `\t` OPTN, `\e`
 EXIT), `-v` prints the screen as it changes, and `-kernel out/linux.bin`
-starts the kernel without the loader. `scripts/boot-test.sh` boots twice:
-once to run shell commands, once to edit a file with `vi`.
+starts the kernel without the loader. `-flash FILE` loads a 32 MiB flash
+image (`scripts/fls.py mkimage` makes one whose storage memory holds given
+files), `-flash-out FILE` saves the flash at the end, `-flash-writes`
+reports any write to it, `-fls NAME=FILE` gives the loader more files and
+`-getkey` the keys it reads (key codes; EXE once they are used up).
+
+`scripts/boot-test.sh` boots five times: to run shell commands, to edit a
+file with `vi`, to install `xip.bin` from the storage memory (the flash
+must then hold it and be unchanged elsewhere), to boot it (programs must
+run from the flash, nothing may write to it, more than 1 MiB must be
+free), and to remove it (the flash must be as before the install).
 
 ## Keys
 

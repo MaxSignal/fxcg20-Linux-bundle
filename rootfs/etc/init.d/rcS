@@ -5,6 +5,26 @@ mount -t tmpfs -o size=128k tmpfs /tmp
 # the Casio storage memory, read only
 mount -t fls fls /mnt/fls 2>/dev/null
 
+# what the loader asked for (F2: install the kernel that runs in place
+# from the flash, then start it; F6: remove it)
+case " $(cat /proc/cmdline) " in
+*" fxcg.boot=install "*)
+	echo "Installing Linux in the flash..."
+	if cat /mnt/fls/xip.bin > /dev/xipflash; then
+		echo "Installed. Starting it..."
+		echo -n fxcgBOOT > /dev/xipflash
+	fi
+	echo "The install failed (see dmesg)."
+	;;
+*" fxcg.boot=remove "*)
+	if echo -n fxcgRMV1 > /dev/xipflash; then
+		echo "Linux is removed from the flash."
+	else
+		echo "Removing it failed (see dmesg)."
+	fi
+	;;
+esac
+
 echo
 echo "Welcome to Linux on the Casio fx-CG20!"
 uname -sr

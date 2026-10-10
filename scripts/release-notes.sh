@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/versions.sh
 
-sums=$(cd "$OUT" && sha256sum fxcglinux.g3a linux.bin fxcg20-linux-*.zip)
+sums=$(cd "$OUT" && sha256sum fxcglinux.g3a linux.bin xip.bin fxcg20-linux-*.zip)
 kernel_commit=$(cut -c1-12 "$OUT/kernel.commit" 2>/dev/null || echo unknown)
 loader_commit=$(cut -c1-12 "$OUT/loader.commit" 2>/dev/null || echo unknown)
 python3 - "$OUT/release-notes.md" <<PY
