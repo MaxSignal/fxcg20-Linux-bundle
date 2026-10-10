@@ -102,6 +102,14 @@ decompresses, green once it is done, white when the kernel reaches the
 board setup, red if decompression fails. The console clears them when it
 starts. The ZIP is named `*-debug`.
 
+Debug builds also have a shell for the computer on the USB cable: the
+kernel has the USB serial gadget (CDC ACM, `/dev/ttyACM0` on Linux
+computers) and `/sbin/usb-shell` waits on it; press Enter on the computer
+side to get a shell. It costs some 140 KiB of RAM, which is why normal
+builds go without it. The calculator's USB storage mode, on the other
+hand, only works on Linux computers with transfers of at most 4 KiB
+(`echo 4 > /sys/block/sdX/queue/max_sectors_kb`).
+
 The GitHub Actions workflow (`.github/workflows/build.yml`) does the same on
 every push, keeps the ZIP as an artifact, and makes a release for each build
 of `main` (tag `build-<run number>`) and each pushed `v*` tag.
