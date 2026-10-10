@@ -1,0 +1,5 @@
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PS1='\w # '
+export HOME=/root
+export TERM=vt100
+cd $HOME 2>/dev/null

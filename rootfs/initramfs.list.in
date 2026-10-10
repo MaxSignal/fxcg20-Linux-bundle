@@ -1,0 +1,18 @@
+# gen_init_cpio list for the fx-CG20 root file system
+dir /dev 755 0 0
+nod /dev/console 600 0 0 c 5 1
+dir /proc 755 0 0
+dir /sys 755 0 0
+dir /tmp 1777 0 0
+dir /root 700 0 0
+dir /bin 755 0 0
+dir /sbin 755 0 0
+dir /usr 755 0 0
+dir /usr/bin 755 0 0
+dir /usr/sbin 755 0 0
+dir /etc 755 0 0
+dir /etc/init.d 755 0 0
+file /etc/inittab @ROOTFS@/etc/inittab 644 0 0
+file /etc/init.d/rcS @ROOTFS@/etc/init.d/rcS 755 0 0
+file /etc/profile @ROOTFS@/etc/profile 644 0 0
+file /bin/busybox @BUSYBOX@ 755 0 0 @LINKS@

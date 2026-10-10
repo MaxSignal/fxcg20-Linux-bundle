@@ -1,0 +1,181 @@
+name: Build
+
+# Builds the toolchain, the kernel with its BusyBox initramfs and the loader
+# add-in, boots them on the casio-cg50 emulator the way the calculator would
+# (loader -> kernel -> BusyBox, a command typed on the key matrix), and zips
+# what goes onto the calculator. Each build of the main branch, and each tag
+# v*, makes a new release (the older ones are kept) with the ZIP and notes
+# made from release/notes.md.
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Kernel branch or tag (default from scripts/versions.sh)
+        required: false
+      loader_ref:
+        description: Loader branch or tag (default from scripts/versions.sh)
+        required: false
+
+env:
+  OUT: ${{ github.workspace }}/out
+  WORK: ${{ github.workspace }}/work
+  KERNEL_REF: ${{ inputs.kernel_ref }}
+  LOADER_REF: ${{ inputs.loader_ref }}
+
+jobs:
+  toolchain:
+    runs-on: ubuntu-24.04
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: key
+        run: |
+          v=$(grep -E 'BINUTILS_|GCC_|MUSL_' scripts/versions.sh | sha256sum | cut -c1-16)
+          echo "key=toolchain-${{ hashFiles('scripts/build-toolchain.sh') }}-$v" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: work/toolchain
+          key: ${{ steps.key.outputs.key }}
+      - name: Install the build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgmp-dev libmpfr-dev libmpc-dev texinfo bc bison flex
+      - name: Build sh4eb-linux-muslfdpic
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          [ -n "$KERNEL_REF" ] || unset KERNEL_REF
+          scripts/build-toolchain.sh
+
+  kernel:
+    needs: toolchain
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: work/toolchain
+          key: ${{ needs.toolchain.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Install the build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex libssl-dev libelf-dev cpio
+      - name: Build BusyBox and the root filesystem
+        run: scripts/build-rootfs.sh
+      - name: Build the kernel
+        run: |
+          [ -n "$KERNEL_REF" ] || unset KERNEL_REF
+          scripts/build-kernel.sh
+          git -C work/linux rev-parse HEAD > out/kernel.commit
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel
+          path: |
+            out/linux.bin
+            out/kernel.release
+            out/kernel.commit
+            out/font6x8.h
+          if-no-files-found: error
+
+  loader:
+    needs: toolchain
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache/restore@v4
+        with:
+          path: work/toolchain
+          key: ${{ needs.toolchain.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Build the loader
+        run: |
+          [ -n "$LOADER_REF" ] || unset LOADER_REF
+          scripts/build-loader.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loader
+          path: |
+            out/fxcglinux.g3a
+            out/loader.commit
+          if-no-files-found: error
+
+  boot-test:
+    needs: [kernel, loader]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Boot on the emulator
+        run: scripts/boot-test.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boot-test
+          path: |
+            out/boot-test.log
+            out/boot-test.png
+
+  package:
+    needs: [kernel, loader, boot-test]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          pattern: '{kernel,loader}'
+          merge-multiple: true
+      - name: Zip the files for the calculator
+        run: |
+          scripts/package.sh
+          scripts/release-notes.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fxcg20-linux
+          path: |
+            out/*.zip
+            out/release-notes.md
+          if-no-files-found: error
+      - name: Release
+        # Every build of the main branch and every v* tag makes a new
+        # release, marked as the latest one; the older ones stay.
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files="out/*.zip"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag=$GITHUB_REF_NAME
+            title=$GITHUB_REF_NAME
+          else
+            tag=build-$GITHUB_RUN_NUMBER
+            title="Build $GITHUB_RUN_NUMBER: Linux $(cat out/kernel.release)"
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" --clobber $files
+          else
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$title" --latest \
+              --notes-file out/release-notes.md $files
+          fi
+
+permissions:
+  contents: write
+
+# One build per branch or tag at a time: a newer push cancels an older build
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
