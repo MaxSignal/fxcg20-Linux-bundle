@@ -4,7 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/versions.sh
 
-zip=$OUT/fxcg20-linux-$(cat "$OUT/kernel.release").zip
+name=fxcg20-linux-$(cat "$OUT/kernel.release")
+[ "$DEBUG" = 1 ] && name=$name-debug
+zip=$OUT/$name.zip
 python3 - "$zip" "$OUT/fxcglinux.g3a" "$OUT/linux.bin" <<'PY'
 import sys, zipfile
 with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as z:

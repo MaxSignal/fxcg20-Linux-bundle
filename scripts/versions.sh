@@ -29,6 +29,13 @@
 : "${BUSYBOX_SHA256:=b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314}"
 : "${BUSYBOX_URL:=https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2}"
 
+# DEBUG=1: bring-up build for real calculators. The kernel draws coloured
+# squares at the bottom right of the screen as it boots (yellow:
+# decompressing, green: decompressed, white: kernel board setup; red:
+# decompression failed) until the console takes over. The package is
+# named *-debug. Not for releases.
+: "${DEBUG:=0}"
+
 : "${OUT:=$(pwd)/out}"
 : "${WORK:=$(pwd)/work}"
 : "${DL:=$WORK/dl}"

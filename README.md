@@ -95,6 +95,13 @@ scripts/release-notes.sh    # out/release-notes.md
 of cloning; `OUT`, `WORK` and `TOOLCHAIN` move the output, work and
 toolchain directories.
 
+`DEBUG=1` (for `build-kernel.sh` and `package.sh`) makes a bring-up build
+whose kernel shows how far the boot got before the console starts, as
+squares at the bottom right of the screen: yellow while the zImage
+decompresses, green once it is done, white when the kernel reaches the
+board setup, red if decompression fails. The console clears them when it
+starts. The ZIP is named `*-debug`.
+
 The GitHub Actions workflow (`.github/workflows/build.yml`) does the same on
 every push, keeps the ZIP as an artifact, and makes a release for each build
 of `main` (tag `build-<run number>`) and each pushed `v*` tag.

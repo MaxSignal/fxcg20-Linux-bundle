@@ -22,12 +22,13 @@ K=(make -C "$SRC" O="$B" ARCH=sh CROSS_COMPILE="$CROSS_COMPILE" -j"$JOBS")
 mkdir -p "$B"
 "${K[@]}" fxcg20_defconfig
 CONFIGS="$TOP/config/kernel.config"
+[ "$DEBUG" = 1 ] && CONFIGS="$CONFIGS $TOP/config/kernel-debug.config"
 "$SRC/scripts/kconfig/merge_config.sh" -m -O "$B" "$B/.config" $CONFIGS
 "$SRC/scripts/config" --file "$B/.config" --set-str INITRAMFS_SOURCE "$OUT/initramfs.list"
 "${K[@]}" olddefconfig
 
 # Fail if a requested option did not make it into the configuration
-grep '^CONFIG_' $CONFIGS | while IFS= read -r line; do
+grep -h '^CONFIG_' $CONFIGS | while IFS= read -r line; do
 	grep -qxF "$line" "$B/.config" || { echo "missing in .config: $line" >&2; exit 1; }
 done
 
