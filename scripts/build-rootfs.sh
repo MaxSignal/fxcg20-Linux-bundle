@@ -42,12 +42,18 @@ sed -e "s|@ROOTFS@|$TOP/rootfs|g" -e "s|@BUSYBOX@|$OUT/busybox|g" \
 	-e "s|@LINKS@|$links|g" -e "s|@INITTAB@|$inittab|g" \
 	"$TOP/rootfs/initramfs.list.in" > "$OUT/initramfs.list"
 
-# DEBUG=1: the USB shell launcher, tiny so that it can wait on the port
+# DEBUG=1: the USB shell launcher, tiny so that it can wait on the port,
 if [ "$DEBUG" = 1 ]; then
 	"${CROSS_COMPILE}gcc" -Os -static -Wall -o "$OUT/usb-shell" \
 		"$TOP/rootfs/debug/usb-shell.c" -Wl,-z,max-page-size=4096 \
 		-Wl,-z,common-page-size=4096 -Wl,-z,stack-size=4096
 	"${CROSS_COMPILE}strip" "$OUT/usb-shell"
 	echo "file /sbin/usb-shell $OUT/usb-shell 755 0 0" >> "$OUT/initramfs.list"
+	# and a read-only flash dumper for it
+	"${CROSS_COMPILE}gcc" -Os -static -Wall -o "$OUT/flashdump" \
+		"$TOP/rootfs/debug/flashdump.c" -Wl,-z,max-page-size=4096 \
+		-Wl,-z,common-page-size=4096 -Wl,-z,stack-size=4096
+	"${CROSS_COMPILE}strip" "$OUT/flashdump"
+	echo "file /sbin/flashdump $OUT/flashdump 755 0 0" >> "$OUT/initramfs.list"
 fi
 echo "busybox: $size bytes, $(wc -l < busybox.links) applets"
