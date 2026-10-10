@@ -13,8 +13,8 @@ the calculator. The fx-CG50 is not supported yet.
 | `linux.bin` | Kernel (zImage) with the BusyBox initramfs |
 
 Both go to the root of the storage memory. The system is BusyBox 1.36
-(hush, vi, coreutils, `ps`, `free`, `mount`…) on Linux 6.12, with the LCD
-and the keyboard as the console. About 280 KiB of the 2 MiB of RAM are
+(hush, vi, coreutils, `ps`, `free`, `mount`…) on Linux 7.2, with the LCD
+and the keyboard as the console. About 330 KiB of the 2 MiB of RAM are
 free once the shell is up.
 
 > **Status:** everything boots on the emulator in CI, down to running a
@@ -25,7 +25,7 @@ free once the shell is up.
 
 | | Repository | Branch |
 |---|---|---|
-| Kernel | [MaxSignal/linux](https://github.com/MaxSignal/linux) | `fxcg20-6.12.y` (Linux 6.12.y LTS + SH7305 / fx-CG patches) |
+| Kernel | [MaxSignal/linux](https://github.com/MaxSignal/linux) | `fxcg20-7.2.y` (Linux 7.2.y stable + SH7305 / fx-CG patches) |
 | Loader | [MaxSignal/fxcg-linux-loader](https://github.com/MaxSignal/fxcg-linux-loader) | `master` |
 | Emulator (tests) | [MaxSignal/casio-cg50](https://github.com/MaxSignal/casio-cg50) | `linux-direct-boot` |
 | Toolchain | built here (`scripts/build-toolchain.sh`): gcc 14.2, binutils 2.42, musl 1.2.4 | |
@@ -33,10 +33,11 @@ free once the shell is up.
 Versions and download locations are in `scripts/versions.sh`; each can be
 overridden from the environment.
 
-Why 6.12 and not 7.x: the same patches build on 7.2.9, but there the
-scheduler always builds its SMP load balancing and debug code, and the
-kernel is about 115 KiB larger. A 7.2 kernel no longer fits the 2 MiB of
-RAM while it decompresses.
+Linux 7.2 always builds the scheduler's SMP load balancing and debug code,
+which makes it about 115 KiB larger than 6.12 for the same configuration.
+It only fits because the kernel branch lets SH link with `--gc-sections`
+(dead code and data elimination), which removes about 190 KiB of code that
+nothing calls in this configuration.
 
 ## How it boots
 
@@ -70,6 +71,7 @@ back the calculator up first.** The storage memory is never written.
 - The initramfs is compressed, so that the compressed image and the
   unpacked files fit at the same time.
 - No framebuffer: the console renders text cells directly into the LCD.
+- The kernel is linked with `--gc-sections` (.text 883 KiB down to 695 KiB).
 - perf, hardware breakpoints, sysfs, block layer and networking are left
   out, and `min_free_kbytes` gets a lower floor on small nommu systems.
 
@@ -112,8 +114,10 @@ work/cgemu linux -g3a out/fxcglinux.g3a -file out/linux.bin -font out/font6x8.h 
     -ins 2000000000 -type 'ls -l /bin\n' -png screen.png
 ```
 
-`-type` is typed with the key layout below, `-v` prints the screen as it
-changes, and `-kernel out/linux.bin` starts the kernel without the loader.
+`-type` is typed with the key layout below (`\n` is EXE, `\t` OPTN, `\e`
+EXIT), `-v` prints the screen as it changes, and `-kernel out/linux.bin`
+starts the kernel without the loader. `scripts/boot-test.sh` boots twice:
+once to run shell commands, once to edit a file with `vi`.
 
 ## Keys
 

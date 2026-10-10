@@ -126,8 +126,8 @@ jobs:
         with:
           name: boot-test
           path: |
-            out/boot-test.log
-            out/boot-test.png
+            out/boot-test-*.log
+            out/boot-test-*.png
 
   package:
     needs: [kernel, loader, boot-test]

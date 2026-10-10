@@ -1,9 +1,9 @@
 # Sources and versions used by the build scripts. Every value can be
 # overridden from the environment.
 
-# Kernel with the fx-CG20 support (Linux 6.12.y LTS + SH7305/fx-CG patches)
+# Kernel with the fx-CG20 support (Linux 7.2.y stable + SH7305/fx-CG patches)
 : "${KERNEL_REPO:=https://github.com/MaxSignal/linux.git}"
-: "${KERNEL_REF:=fxcg20-6.12.y}"
+: "${KERNEL_REF:=fxcg20-7.2.y}"
 
 # Linux loader (a Casio OS add-in)
 : "${LOADER_REPO:=https://github.com/MaxSignal/fxcg-linux-loader.git}"
@@ -56,7 +56,15 @@ source_tree() {
 		return
 	fi
 	d=$WORK/$1
-	if [ ! -d "$d/.git" ] || [ "$(cat "$d/.git/fxcg-ref" 2>/dev/null)" != "$2 $3" ]; then
+	# reuse the checkout only while it is still what REF points to
+	want=$(git ls-remote "$2" "$3" "refs/tags/$3^{}" | tail -1 | cut -f1)
+	stale=0
+	[ -d "$d/.git" ] || stale=1
+	[ "$(cat "$d/.git/fxcg-ref" 2>/dev/null)" = "$2 $3" ] || stale=1
+	if [ $stale = 0 ] && [ -n "$want" ] && [ "$(git -C "$d" rev-parse HEAD)" != "$want" ]; then
+		stale=1
+	fi
+	if [ $stale = 1 ]; then
 		rm -rf "$d"
 		git clone -q --depth 1 --branch "$3" "$2" "$d" >&2
 		echo "$2 $3" > "$d/.git/fxcg-ref"
