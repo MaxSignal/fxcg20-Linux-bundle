@@ -1,0 +1,3 @@
+# DEBUG=1: a shell for the computer on the USB cable (/dev/ttyACM0 there),
+# started once Enter is pressed on that side
+::respawn:/sbin/usb-shell

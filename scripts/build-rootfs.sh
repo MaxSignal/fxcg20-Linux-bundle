@@ -33,6 +33,21 @@ fi
 
 # Applets are hard links: a ramfs symlink costs a whole 4 KiB page.
 links=$(grep -v '^/bin/busybox$' busybox.links | paste -sd' ')
+inittab=$TOP/rootfs/etc/inittab
+if [ "$DEBUG" = 1 ]; then
+	inittab=$OUT/inittab
+	cat "$TOP/rootfs/etc/inittab" "$TOP/rootfs/debug/inittab" > "$inittab"
+fi
 sed -e "s|@ROOTFS@|$TOP/rootfs|g" -e "s|@BUSYBOX@|$OUT/busybox|g" \
-	-e "s|@LINKS@|$links|g" "$TOP/rootfs/initramfs.list.in" > "$OUT/initramfs.list"
+	-e "s|@LINKS@|$links|g" -e "s|@INITTAB@|$inittab|g" \
+	"$TOP/rootfs/initramfs.list.in" > "$OUT/initramfs.list"
+
+# DEBUG=1: the USB shell launcher, tiny so that it can wait on the port
+if [ "$DEBUG" = 1 ]; then
+	"${CROSS_COMPILE}gcc" -Os -static -Wall -o "$OUT/usb-shell" \
+		"$TOP/rootfs/debug/usb-shell.c" -Wl,-z,max-page-size=4096 \
+		-Wl,-z,common-page-size=4096 -Wl,-z,stack-size=4096
+	"${CROSS_COMPILE}strip" "$OUT/usb-shell"
+	echo "file /sbin/usb-shell $OUT/usb-shell 755 0 0" >> "$OUT/initramfs.list"
+fi
 echo "busybox: $size bytes, $(wc -l < busybox.links) applets"

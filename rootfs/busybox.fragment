@@ -92,5 +92,5 @@ CONFIG_FEATURE_EDITING_HISTORY=8
 # CONFIG_FEATURE_MOUNT_CIFS is not set
 # CONFIG_FEATURE_MOUNT_HELPERS is not set
 # CONFIG_FEATURE_MOUNT_LABEL is not set
-CONFIG_EXTRA_LDFLAGS="-Wl,-z,max-page-size=4096 -Wl,-z,common-page-size=4096 -Wl,-z,stack-size=24576"
+CONFIG_EXTRA_LDFLAGS="-Wl,-z,max-page-size=4096 -Wl,-z,common-page-size=4096 -Wl,-z,stack-size=16384"
 CONFIG_FEATURE_DMESG_PRETTY=y

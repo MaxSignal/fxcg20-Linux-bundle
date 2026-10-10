@@ -12,7 +12,7 @@ dir /usr/bin 755 0 0
 dir /usr/sbin 755 0 0
 dir /etc 755 0 0
 dir /etc/init.d 755 0 0
-file /etc/inittab @ROOTFS@/etc/inittab 644 0 0
+file /etc/inittab @INITTAB@ 644 0 0
 file /etc/init.d/rcS @ROOTFS@/etc/init.d/rcS 755 0 0
 file /etc/profile @ROOTFS@/etc/profile 644 0 0
 file /bin/busybox @BUSYBOX@ 755 0 0 @LINKS@
