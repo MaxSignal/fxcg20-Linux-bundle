@@ -45,8 +45,10 @@ kernel's `/dev/ncm`.
 
 ## Sound
 
-Tones come out of the 3-pin port (tip and sleeve), for instance with
-`beep -f 440 -l 200`; the terminal bell beeps too.
+Tones come out of the 2.5 mm serial jack (its transmit line), for
+instance with `beep -f 440 -l 200`; the terminal bell beeps too. An
+earphone on a 2.5-to-3.5 mm adapter plays them on one side; the square
+wave is loud, a resistor in series (some 100 Ω to 1 kΩ) tames it.
 
 ## Building
 
