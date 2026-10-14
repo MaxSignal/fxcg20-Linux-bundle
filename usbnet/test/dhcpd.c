@@ -1,14 +1,14 @@
 /*
- * DHCP server: whatever the host asks, it gets HOST_IP (one host on
- * the other end of the cable). No router and no DNS server are given,
- * so the host keeps its own default route.
+ * The computer's DHCP server in the test, as Internet connection sharing
+ * does it: the calculator gets CALC_IP, the computer is its router and
+ * DNS server.
  */
 #include <string.h>
 #include "lwip/ip4_addr.h"
 #include "lwip/pbuf.h"
 #include "lwip/udp.h"
 #include "link.h"
-#include "services.h"
+#include "ncmtest.h"
 
 #define DISCOVER	1
 #define OFFER		2
@@ -55,8 +55,8 @@ static void dhcpd_recv(void *arg, struct udp_pcb *upcb, struct pbuf *p,
 	if (type != DISCOVER && type != REQUEST)
 		return;
 
-	ip4addr_aton(HOST_IP, &yi);
-	ip4addr_aton(CALC_IP, &si);
+	ip4addr_aton(CALC_IP, &yi);
+	ip4addr_aton(PC_IP, &si);
 	ip4addr_aton("255.255.255.0", &mask);
 	m[0] = 2;			/* BOOTREPLY */
 	m[3] = 0;			/* hops */
@@ -70,6 +70,8 @@ static void dhcpd_recv(void *arg, struct udp_pcb *upcb, struct pbuf *p,
 	o = option(o, 54, 4, &si);
 	o = option(o, 51, 4, lease);
 	o = option(o, 1, 4, &mask);
+	o = option(o, 3, 4, &si);		/* router */
+	o = option(o, 6, 4, &si);		/* DNS server */
 	*o++ = 255;
 	len = o - m;
 	if (len < 300)			/* the BOOTP minimum */

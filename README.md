@@ -31,24 +31,26 @@ back to the Casio OS, press RESET (or run `reboot`).
 ## Network over USB
 
 On a USB cable the calculator is a network adapter for the computer
-(CDC NCM). The computer gets 192.168.7.2 by DHCP; the calculator is
-192.168.7.1:
+(CDC NCM), and reaches the network through it: share the computer's
+Internet connection with that adapter (Windows: Internet Connection
+Sharing; Linux: NetworkManager's "Shared to other computers"; macOS:
+Internet Sharing). The address comes by DHCP, or is 169.254.x.x without
+a DHCP server; `/tmp/ncm/status` shows it. The calculator answers pings.
 
 ```sh
-telnet 192.168.7.1                          # a shell
-curl http://192.168.7.1/etc/profile         # a file, or a directory listing
-curl -T notes.txt http://192.168.7.1/tmp/   # send a file
+echo -e 'GET / HTTP/1.0\r\nHost: example.com\r\n\r' | tcp example.com 80
 ```
 
-The kernel has no networking: `ncmd` runs lwIP in user space on the
-kernel's `/dev/ncm`.
+`tcp HOST PORT` connects its standard input and output to a TCP
+connection. The kernel has no networking: `ncmd` runs lwIP in user
+space on the kernel's `/dev/ncm`, and `tcp` asks it through named pipes.
 
 ## Sound
 
-Tones come out of the 2.5 mm serial jack (its transmit line), for
-instance with `beep -f 440 -l 200`; the terminal bell beeps too. An
-earphone on a 2.5-to-3.5 mm adapter plays them on one side; the square
-wave is loud, a resistor in series (some 100 Ω to 1 kΩ) tames it.
+Tones come out of the 2.5 mm serial jack, for instance with
+`beep -f 440 -l 200`; the terminal bell beeps too. An earphone on a
+2.5-to-3.5 mm adapter plays them; the square wave is loud, a resistor
+in series (some 100 Ω to 1 kΩ) tames it.
 
 ## Building
 

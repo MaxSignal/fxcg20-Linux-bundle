@@ -1,140 +1,255 @@
 /*
- * Test of ncmd, on the build machine or on the calculator: ncmd runs as
- * a child with two pipes instead of /dev/ncm; this program is the host
- * on the other end, with its own lwIP: DHCP, telnet, HTTP PUT/GET.
+ * Test of ncmd, on the build machine or on the calculator. ncmd runs as
+ * a child with two pipes instead of /dev/ncm; this program is the
+ * computer on the other end of the cable, with its own lwIP: a DHCP
+ * server, a DNS server that knows "pc.test", a TCP echo server (port
+ * 7). It pings the calculator, and runs its tcp client.
  *
- *	ncmtest NCMD HTTP_ROOT
+ *	ncmtest NCMD DIR	(DIR: for ncmd's pipes)
  */
 #define _GNU_SOURCE	/* pipe2 */
+#include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include "lwip/dhcp.h"
+#include "lwip/inet_chksum.h"
+#include "lwip/ip4.h"
+#include "lwip/prot/icmp.h"
+#include "lwip/raw.h"
 #include "lwip/sys.h"
 #include "lwip/tcp.h"
 #include "lwip/timeouts.h"
+#include "lwip/udp.h"
 #include "link.h"
-#include "services.h"
+#include "ncmtest.h"
 
-static const uint8_t host_mac[6] = { 0x02, 0xfc, 0x00, 0x00, 0x00, 0x01 };
-static int fd;
+static const uint8_t pc_mac[6] = { 0x02, 0xfc, 0x00, 0x00, 0x00, 0x01 };
+static int link_fd;
+static const char *ncmd, *dir;
 
-/* run lwIP until done() or ms milliseconds */
-static bool run(bool (*done)(void), u32_t ms)
+/* run lwIP for ms milliseconds, or until done(); extra() when extra_fd is ready */
+static bool run(bool (*done)(void), u32_t ms, int extra_fd, void (*extra)(void))
 {
 	u32_t end = sys_now() + ms;
 
 	while (!done()) {
-		struct pollfd p = { .fd = fd, .events = POLLIN };
+		struct pollfd p[2] = {
+			{ .fd = link_fd, .events = POLLIN },
+			{ .fd = extra_fd, .events = POLLIN },
+		};
 
 		if ((s32_t)(sys_now() - end) > 0)
 			return false;
-		poll(&p, 1, 20);
-		if (p.revents & POLLIN)
+		poll(p, 2, 20);
+		if (p[0].revents & POLLIN)
 			link_input();
+		if (p[1].revents)
+			extra();
 		sys_check_timeouts();
 	}
 	return true;
 }
 
-/* one TCP exchange: send req, collect the reply until the server closes */
-static struct {
-	struct tcp_pcb *pcb;
-	const char *req;
-	size_t reqlen, sent;
-	char reply[16384];
-	size_t len;
-	bool closed, failed;
-	const char *close_after;	/* send "exit" once this was received */
-} x;
+/* ------------------------------------------------- the computer's servers */
 
-static void push(void)
+/* DNS: an A record for pc.test, "no such name" for anything else */
+static void dns_recv(void *arg, struct udp_pcb *pcb, struct pbuf *p,
+		     const ip_addr_t *addr, u16_t port)
 {
-	while (x.pcb && x.sent < x.reqlen && tcp_sndbuf(x.pcb)) {
-		size_t n = x.reqlen - x.sent;
+	static const uint8_t qname[] = "\2pc\4test";
+	static const uint8_t answer[12] = {
+		0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4	/* A, 60 s, 4 bytes */
+	};
+	uint8_t m[512];
+	u16_t len = pbuf_copy_partial(p, m, sizeof(m) - 16, 0), q = 12;
+	ip4_addr_t pc;
+	struct pbuf *r;
 
-		if (n > tcp_sndbuf(x.pcb))
-			n = tcp_sndbuf(x.pcb);
-		if (tcp_write(x.pcb, x.req + x.sent, n, TCP_WRITE_FLAG_COPY) != ERR_OK)
-			break;
-		x.sent += n;
+	(void)arg;
+	pbuf_free(p);
+	if (len < 17)
+		return;
+	while (q < len && m[q])
+		q += m[q] + 1;
+	q += 5;				/* the 0, QTYPE, QCLASS */
+	if (q > len)
+		return;
+	m[2] = 0x81;			/* a response, recursion desired */
+	m[3] = 0x80;			/* recursion available */
+	memset(m + 6, 0, 6);
+	if (!memcmp(m + 12, qname, sizeof(qname)) && m[q - 3] == 1) {
+		m[7] = 1;
+		memcpy(m + q, answer, sizeof(answer));
+		ip4addr_aton(PC_IP, &pc);
+		memcpy(m + q + 12, &pc, 4);
+		q += 16;
+	} else {
+		m[3] |= 3;		/* no such name */
 	}
-	if (x.pcb)
-		tcp_output(x.pcb);
+	r = pbuf_alloc(PBUF_TRANSPORT, q, PBUF_RAM);
+	if (!r)
+		return;
+	pbuf_take(r, m, q);
+	udp_sendto(pcb, r, addr, port);
+	pbuf_free(r);
 }
 
-static err_t x_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
+static err_t echo_recv(void *arg, struct tcp_pcb *pcb, struct pbuf *p, err_t err)
 {
+	struct pbuf *q;
+
 	(void)arg; (void)err;
 	if (!p) {
-		x.closed = true;
 		tcp_close(pcb);
-		x.pcb = NULL;
 		return ERR_OK;
 	}
-	if (x.len + p->tot_len < sizeof(x.reply))
-		x.len += pbuf_copy_partial(p, x.reply + x.len, p->tot_len, 0);
-	x.reply[x.len] = 0;
+	for (q = p; q; q = q->next)
+		tcp_write(pcb, q->payload, q->len, TCP_WRITE_FLAG_COPY);
+	tcp_output(pcb);
 	tcp_recved(pcb, p->tot_len);
 	pbuf_free(p);
-	if (x.close_after && strstr(x.reply, x.close_after)) {
-		x.close_after = NULL;
-		tcp_write(pcb, "exit\r\n", 6, TCP_WRITE_FLAG_COPY);
-		tcp_output(pcb);
-	}
 	return ERR_OK;
 }
 
-static err_t x_sent(void *arg, struct tcp_pcb *pcb, u16_t len)
-{
-	(void)arg; (void)pcb; (void)len;
-	push();
-	return ERR_OK;
-}
-
-static void x_err(void *arg, err_t err)
+static err_t echo_accept(void *arg, struct tcp_pcb *pcb, err_t err)
 {
 	(void)arg; (void)err;
-	x.pcb = NULL;
-	x.failed = true;
-}
-
-static err_t x_connected(void *arg, struct tcp_pcb *pcb, err_t err)
-{
-	(void)arg; (void)pcb; (void)err;
-	push();
+	tcp_recv(pcb, echo_recv);
 	return ERR_OK;
 }
 
-static bool x_done(void) { return x.closed || x.failed; }
+/* pings to the calculator */
+static struct raw_pcb *icmp_pcb;
+static int replies;
 
-static const char *exchange(u16_t port, const char *req, size_t len,
-			    const char *close_after)
+static u8_t icmp_recv(void *arg, struct raw_pcb *pcb, struct pbuf *p,
+		      const ip_addr_t *addr)
 {
-	ip_addr_t calc;
+	struct icmp_echo_hdr e;
+	u16_t hlen = IPH_HL_BYTES((struct ip_hdr *)p->payload);
 
-	memset(&x, 0, sizeof(x));
-	x.req = req;
-	x.reqlen = len;
-	x.close_after = close_after;
-	ipaddr_aton(CALC_IP, &calc);
-	x.pcb = tcp_new();
-	tcp_recv(x.pcb, x_recv);
-	tcp_sent(x.pcb, x_sent);
-	tcp_err(x.pcb, x_err);
-	tcp_connect(x.pcb, &calc, port, x_connected);
-	if (!run(x_done, 10000) || x.failed)
-		return NULL;
-	return x.reply;
+	(void)arg; (void)pcb; (void)addr;
+	if (pbuf_copy_partial(p, &e, sizeof(e), hlen) != sizeof(e) ||
+	    ICMPH_TYPE(&e) != ICMP_ER || e.id != PP_HTONS(0x4e43))
+		return 0;
+	replies++;
+	pbuf_free(p);
+	return 1;
 }
 
-static bool dhcp_done(void) { return dhcp_supplied_address(&link_netif); }
+static void ping_calc(int seq)
+{
+	struct pbuf *p = pbuf_alloc(PBUF_IP, sizeof(struct icmp_echo_hdr) + 32, PBUF_RAM);
+	struct icmp_echo_hdr *e = p->payload;
+	ip_addr_t calc;
+
+	memset(e, 0, p->len);
+	ICMPH_TYPE_SET(e, ICMP_ECHO);
+	e->id = PP_HTONS(0x4e43);
+	e->seqno = lwip_htons(seq);
+	e->chksum = inet_chksum(e, p->len);
+	ipaddr_aton(CALC_IP, &calc);
+	raw_sendto(icmp_pcb, p, &calc);
+	pbuf_free(p);
+}
+
+static void servers_init(void)
+{
+	struct udp_pcb *dns = udp_new();
+	struct tcp_pcb *echo = tcp_new();
+
+	dhcpd_init();
+	udp_bind(dns, IP4_ADDR_ANY, 53);
+	udp_recv(dns, dns_recv, NULL);
+	tcp_bind(echo, IP4_ADDR_ANY, 7);
+	echo = tcp_listen(echo);
+	tcp_accept(echo, echo_accept);
+	icmp_pcb = raw_new(IP_PROTO_ICMP);
+	raw_recv(icmp_pcb, icmp_recv, NULL);
+}
+
+/* --------------------------------------------- the calculator's programs */
+
+static char status[256];
+
+static bool has_address(void)
+{
+	char path[256];
+	FILE *f;
+	size_t n;
+
+	snprintf(path, sizeof(path), "%s/status", dir);
+	f = fopen(path, "r");
+	if (!f)
+		return false;
+	n = fread(status, 1, sizeof(status) - 1, f);
+	status[n] = 0;
+	fclose(f);
+	return strstr(status, "address " CALC_IP "\n") != NULL;
+}
+
+static int want;
+
+static bool replied(void) { return replies == want; }
+
+/* one client run: its output (and errors) and when it ended */
+static struct {
+	int out;
+	char text[4096];
+	size_t len;
+	bool done;
+} cl;
+
+static void client_output(void)
+{
+	ssize_t n = 0;
+
+	if (cl.len < sizeof(cl.text) - 1)
+		n = read(cl.out, cl.text + cl.len, sizeof(cl.text) - 1 - cl.len);
+
+	if (n <= 0) {
+		cl.done = true;
+		return;
+	}
+	cl.len += n;
+	cl.text[cl.len] = 0;
+}
+
+static bool client_done(void) { return cl.done; }
+
+/* "tcp HOST PORT" with input on its stdin; its exit status */
+static int tcp_client(const char *input, const char *host, const char *port)
+{
+	int in[2], out[2], st = -1;
+	pid_t pid;
+
+	memset(&cl, 0, sizeof(cl));
+	if (pipe2(in, O_CLOEXEC) < 0 || pipe2(out, O_CLOEXEC) < 0)
+		return -1;
+	pid = vfork();
+	if (pid == 0) {
+		dup2(in[0], 0);
+		dup2(out[1], 1);
+		dup2(out[1], 2);
+		execl(ncmd, "tcp", host, port, (char *)NULL);
+		_exit(127);
+	}
+	close(in[0]);
+	close(out[1]);
+	if (write(in[1], input, strlen(input)) < 0)
+		return -1;
+	close(in[1]);
+	cl.out = out[0];
+	run(client_done, 20000, cl.out, client_output);
+	close(cl.out);
+	waitpid(pid, &st, 0);
+	return WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+}
 
 static int failures;
 
@@ -147,15 +262,17 @@ static void check(bool ok, const char *what)
 int main(int argc, char **argv)
 {
 	int to[2], from[2];		/* to ncmd, from ncmd */
+	char arg[24];
 	pid_t pid;
-	char arg[24], *data, *req;
-	const char *r;
-	size_t n = 5000, i;
+	int st, i;
 
 	if (argc != 3) {
-		fprintf(stderr, "usage: ncmtest NCMD HTTP_ROOT\n");
+		fprintf(stderr, "usage: ncmtest NCMD DIR\n");
 		return 2;
 	}
+	ncmd = argv[1];
+	dir = argv[2];
+	setenv("NCM_DIR", dir, 1);
 	/* ours close on exec, ncmd's not */
 	if (pipe2(to, O_CLOEXEC) < 0 || pipe2(from, O_CLOEXEC) < 0)
 		return 1;
@@ -164,40 +281,34 @@ int main(int argc, char **argv)
 	snprintf(arg, sizeof(arg), "%d,%d", to[0], from[1]);
 	pid = vfork();
 	if (pid == 0) {
-		execl(argv[1], argv[1], "-P", arg, "-r", argv[2], (char *)NULL);
+		execl(ncmd, "ncmd", "-P", arg, (char *)NULL);
 		_exit(127);
 	}
 	close(to[0]);
 	close(from[1]);
-	fd = from[0];
+	link_fd = from[0];
+	link_init(from[0], to[1], pc_mac, PC_IP, NULL);
+	servers_init();
 
-	link_init(from[0], to[1], host_mac, NULL, NULL);
-	dhcp_start(&link_netif);
-	check(run(dhcp_done, 15000), "DHCP");
-	check(!strcmp(ip4addr_ntoa(netif_ip4_addr(&link_netif)), HOST_IP),
-	      "the host got " HOST_IP);
+	check(run(has_address, 20000, -1, NULL), "DHCP: the calculator got " CALC_IP);
+	check(strstr(status, "router " PC_IP "\n") && strstr(status, "dns " PC_IP "\n"),
+	      "router and DNS server");
 
-	r = exchange(23, "echo hello-$((6*7))\r\n", 21, "hello-42");
-	check(r && strstr(r, "hello-42"), "telnet: a shell command");
+	for (i = 1; i <= 3; i++) {	/* one at a time: the first waits for ARP */
+		want = i;
+		ping_calc(i);
+		run(replied, 2000, -1, NULL);
+	}
+	check(replies == 3, "the calculator answers pings");
 
-	data = malloc(n);
-	req = malloc(n + 100);
-	for (i = 0; i < n; i++)
-		data[i] = 'a' + i % 26;
-	i = sprintf(req, "PUT /ncmtest.txt HTTP/1.0\r\nContent-Length: %zu\r\n\r\n", n);
-	memcpy(req + i, data, n);
-	r = exchange(80, req, i + n, NULL);
-	check(r && strstr(r, " 201 "), "HTTP PUT");
+	st = tcp_client("hello-42\n", "pc.test", "7");
+	check(st == 0 && !strcmp(cl.text, "hello-42\n"), "tcp: echo through a name");
 
-	r = exchange(80, "GET /ncmtest.txt HTTP/1.0\r\n\r\n", 29, NULL);
-	r = r ? strstr(r, "\r\n\r\n") : NULL;
-	check(r && strlen(r + 4) == n && !memcmp(r + 4, data, n), "HTTP GET");
+	st = tcp_client("", "nosuch.test", "7");
+	check(st == 1 && strstr(cl.text, "unknown host"), "tcp: an unknown name");
 
-	r = exchange(80, "GET / HTTP/1.0\r\n\r\n", 18, NULL);
-	check(r && strstr(r, "\nncmtest.txt\n"), "HTTP directory listing");
-
-	r = exchange(80, "GET /../etc/passwd HTTP/1.0\r\n\r\n", 32, NULL);
-	check(r && strstr(r, " 403 "), "HTTP: no way out of the root");
+	st = tcp_client("", PC_IP, "9");
+	check(st == 1 && strstr(cl.text, "refused"), "tcp: a closed port");
 
 	kill(pid, SIGTERM);
 	waitpid(pid, NULL, 0);

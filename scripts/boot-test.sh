@@ -36,20 +36,15 @@ run keys "\\c++\\c\\s$(printf '\003')echo awake\\n"
 grep -q '^awake$' "$OUT/boot-test-keys.log" || fail keys "no shell after waking up"
 grep -q 'R5A1: 50 ' "$OUT/boot-test-keys.log" || fail keys "backlight"
 
-# 4. a tone on the 3-pin port: 1000 Hz for 0.5 s, about 1000 changes of the pin
+# 4. a tone on the serial jack: 1000 Hz for 0.5 s, about 1000 changes of a line
 run tone 'beep -f 1000 -l 500\n'
 n=$(sed -n 's/^==== 3-pin transmit pin changes: \([0-9]*\) ====$/\1/p' "$OUT/boot-test-tone.log")
 [ "${n:-0}" -ge 900 ] && [ "$n" -le 1100 ] || fail tone "$n changes of the transmit pin"
 
-# 5. ncmd on the calculator against ncmtest, a host side made of lwIP
-# (the emulator has no USB): DHCP, telnet on a pseudo terminal, HTTP
-python3 scripts/fls.py mkimage "$OUT/net-flash.bin" ncmtest="$OUT/ncmtest" > /dev/null
-run net 'cp /mnt/fls/ncmtest /tmp/t; /tmp/t /sbin/ncmd /tmp\n' -flash "$OUT/net-flash.bin" -ins 8000000000
-grep -q '^PASS$' "$OUT/boot-test-net.log" || fail net "ncmtest"
-
-# 6. EXE (F2) with flash.bin in the storage memory: linux.bin installs it.
+# 5. EXE (F2) with flash.bin in the storage memory: linux.bin installs it.
 # Only the two flash areas may change.
-python3 scripts/fls.py mkimage "$OUT/rom-before.bin" flash.bin="$OUT/flash.bin" > /dev/null
+python3 scripts/fls.py mkimage "$OUT/rom-before.bin" flash.bin="$OUT/flash.bin" \
+	ncmtest="$OUT/ncmtest" > /dev/null
 rom=(-fls linuxf.bin="$OUT/linuxf.bin",flash.bin="$OUT/flash.bin")
 run rom-install 'dmesg | grep xipflash\n' "${rom[@]}" -flash "$OUT/rom-before.bin" -flash-out "$OUT/rom-after.bin"
 grep -q '^xipflash: installed$' "$OUT/boot-test-rom-install.log" || fail rom-install "the install failed"
@@ -75,7 +70,7 @@ PY
 }
 check_flash "$OUT/rom-before.bin" "$OUT/rom-after.bin" "$OUT/flash.bin" || fail rom-install "the flash"
 
-# 7. EXE (F2) boots linuxf.bin; nothing writes to the flash; ncmd runs
+# 6. EXE (F2) boots linuxf.bin; nothing writes to the flash; ncmd runs
 run rom 'free; cat /proc/[0-9]*/comm\n' "${rom[@]}" -flash "$OUT/rom-after.bin" -flash-writes
 log=$OUT/boot-test-rom.log
 grep -q '^==== flash writes: 0 ====$' "$log" || fail rom "something wrote to the flash"
@@ -83,6 +78,11 @@ grep -q '^ncmd$' "$log" || fail rom "ncmd (network over USB) is not running"
 free=$(awk '$1=="Mem:"{f=$4} END{print f}' "$log")
 echo "free memory with part of the kernel in the flash: $free KiB"
 [ "${free:-0}" -gt 700 ] || fail rom "less free memory than expected"
+
+# 7. ncmd on the calculator (linuxf.bin) against ncmtest, the computer's
+# side made of lwIP (the emulator has no USB): DHCP, DNS, pings, tcp
+run net 'cp /mnt/fls/ncmtest /tmp/t; /tmp/t /sbin/ncmd /tmp/n\n' "${rom[@]}" -flash "$OUT/rom-after.bin" -ins 8000000000
+grep -q '^PASS$' "$OUT/boot-test-net.log" || fail net "ncmtest"
 
 # 8. F6 removes the flash part
 run rom-remove 'echo done\n' "${rom[@]}" -getkey 30014 -flash "$OUT/rom-after.bin" -flash-out "$OUT/rom-removed.bin"
