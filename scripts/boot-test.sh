@@ -90,7 +90,7 @@ grep -q '^PASS$' "$OUT/boot-test-net.log" || fail net "ncmtest"
 # fls.py checks every record written and the FAT16 disk; nothing outside
 # the storage area may change.
 python3 scripts/fls.py mkimage "$OUT/fls-before.bin" --base="$OUT/rom-after.bin" --free=8 > /dev/null
-run fls 'mount -o remount,rw /mnt/fls;cd /mnt/fls;echo hello > a.txt;mkdir Dir;cp /bin/busybox Dir/LongFileName.bin;cp a.txt b.txt;mv b.txt Dir/;rm a.txt;echo more >> Dir/b.txt;sync;md5sum /bin/busybox Dir/*\n' \
+run fls 'cd /mnt/fls;echo hello > a.txt;mkdir Dir;cp /bin/busybox Dir/LongFileName.bin;cp a.txt b.txt;mv b.txt Dir/;rm a.txt;echo more >> Dir/b.txt;sync;md5sum /bin/busybox Dir/*\n' \
 	"${rom[@]}" -flash "$OUT/fls-before.bin" -flash-out "$OUT/fls-after.bin" -ins 12000000000
 bb=$(sed -n 's|^\([0-9a-f]\{32\}\)  /bin/busybox$|\1|p' "$OUT/boot-test-fls.log")
 [ -n "$bb" ] || fail fls "md5sum /bin/busybox"

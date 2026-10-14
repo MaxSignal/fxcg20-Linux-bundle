@@ -1,8 +1,8 @@
 #!/bin/sh
 mount -t proc proc /proc
 mount -t tmpfs -o size=128k tmpfs /tmp
-# the Casio storage memory, read only ("mount -o remount,rw /mnt/fls" to write)
-mount -t fls -o ro fls /mnt/fls 2>/dev/null
+# the Casio storage memory
+mount -t fls fls /mnt/fls 2>/dev/null
 # the network over USB, when the kernel has /dev/ncm
 ncmd >/dev/null 2>&1 &
 

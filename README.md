@@ -30,15 +30,9 @@ back to the Casio OS, press RESET (or run `reboot`).
 
 ## The storage memory
 
-The calculator's files are under `/mnt/fls`, read only at first:
-
-```sh
-mount -o remount,rw /mnt/fls
-cp notes.txt /mnt/fls/
-sync                # before a reset: changed pages wait in RAM until then
-```
-
-Linux writes them in the Casio OS's own format; names must be ASCII.
+The calculator's files are under `/mnt/fls`, and Linux writes them in
+the Casio OS's own format (names must be ASCII). A file is written when
+it is closed; `sync` before pressing RESET, `reboot` does it.
 
 ## Network over USB
 
