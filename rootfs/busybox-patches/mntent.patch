@@ -1,0 +1,90 @@
+libbb: mntent functions without sscanf
+
+musl's getmntent_r uses sscanf, which brings in the whole of scanf.
+
+--- /dev/null
++++ b/libbb/mntent.c
+@@ -0,0 +1,83 @@
++/* vi: set sw=4 ts=4: */
++/*
++ * The mntent functions, without sscanf: musl's getmntent_r uses it,
++ * which brings in the whole of scanf.
++ *
++ * Licensed under GPLv2 or later, see file LICENSE in this source tree.
++ */
++//kbuild:lib-y += mntent.o
++
++#include "libbb.h"
++#include <mntent.h>
++
++FILE *setmntent(const char *name, const char *mode)
++{
++	return fopen(name, mode);
++}
++
++int endmntent(FILE *f)
++{
++	if (f)
++		fclose(f);
++	return 1;
++}
++
++static char *next_field(char **s)
++{
++	char *p = skip_whitespace(*s);
++	char *e = skip_non_whitespace(p);
++
++	if (*e)
++		*e++ = '\0';
++	*s = e;
++	return p;
++}
++
++struct mntent *getmntent_r(FILE *f, struct mntent *mnt, char *buf, int len)
++{
++	char *s;
++
++	for (;;) {
++		if (!fgets(buf, len, f))
++			return NULL;
++		if (!strchr(buf, '\n')) {
++			int c;
++			/* too long: skip the rest of the line */
++			while ((c = getc(f)) != EOF && c != '\n')
++				continue;
++			continue;
++		}
++		s = skip_whitespace(buf);
++		if (*s != '#' && *s != '\0')
++			break;
++	}
++	mnt->mnt_fsname = next_field(&s);
++	mnt->mnt_dir = next_field(&s);
++	mnt->mnt_type = next_field(&s);
++	mnt->mnt_opts = next_field(&s);
++	mnt->mnt_freq = strtol(s, &s, 10);
++	mnt->mnt_passno = strtol(s, NULL, 10);
++	return mnt;
++}
++
++struct mntent *getmntent(FILE *f)
++{
++	static struct mntent mnt;
++	static char buf[256];
++
++	return getmntent_r(f, &mnt, buf, sizeof(buf));
++}
++
++int addmntent(FILE *f, const struct mntent *mnt)
++{
++	if (fseek(f, 0, SEEK_END))
++		return 1;
++	return fprintf(f, "%s\t%s\t%s\t%s\t%d\t%d\n",
++		mnt->mnt_fsname, mnt->mnt_dir, mnt->mnt_type, mnt->mnt_opts,
++		mnt->mnt_freq, mnt->mnt_passno) < 0;
++}
++
++char *hasmntopt(const struct mntent *mnt, const char *opt)
++{
++	return strstr(mnt->mnt_opts, opt);
++}

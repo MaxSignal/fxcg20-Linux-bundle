@@ -1,0 +1,49 @@
+hush, free: no sscanf
+
+sscanf brings in the whole of musl's scanf, floats included.
+
+--- a/shell/hush.c
++++ b/shell/hush.c
+@@ -11720,7 +11720,9 @@
+ 	struct pipe *pi;
+ 	unsigned jobnum;
+ 
+-	if (sscanf(str, "%%%u", &jobnum) != 1) {
++	if (str[0] == '%' && isdigit(str[1])) {
++		jobnum = strtoul(str + 1, NULL, 10);
++	} else {
+ 		if (str[0] != '%'
+ 		 || (str[1] != '%' && str[1] != '+' && str[1] != '\0')
+ 		) {
+--- a/procps/free.c
++++ b/procps/free.c
+@@ -88,15 +88,20 @@
+ 	g->cached_kb = g->available_kb = g->reclaimable_kb = 0;
+ 	seen_cached_and_available_and_reclaimable = 3;
+ 	while (fgets(buf, sizeof(buf), fp)) {
+-		if (sscanf(buf, "Cached: %lu %*s\n", &g->cached_kb) == 1)
+-			if (--seen_cached_and_available_and_reclaimable == 0)
+-				break;
+-		if (sscanf(buf, "MemAvailable: %lu %*s\n", &g->available_kb) == 1)
+-			if (--seen_cached_and_available_and_reclaimable == 0)
+-				break;
+-		if (sscanf(buf, "SReclaimable: %lu %*s\n", &g->reclaimable_kb) == 1)
+-			if (--seen_cached_and_available_and_reclaimable == 0)
+-				break;
++		unsigned long *v;
++		char *p;
++
++		if ((p = is_prefixed_with(buf, "Cached:")) != NULL)
++			v = &g->cached_kb;
++		else if ((p = is_prefixed_with(buf, "MemAvailable:")) != NULL)
++			v = &g->available_kb;
++		else if ((p = is_prefixed_with(buf, "SReclaimable:")) != NULL)
++			v = &g->reclaimable_kb;
++		else
++			continue;
++		*v = strtoul(p, NULL, 10);
++		if (--seen_cached_and_available_and_reclaimable == 0)
++			break;
+ 	}
+ 	/* Have to close because of NOFORK */
+ 	fclose(fp);

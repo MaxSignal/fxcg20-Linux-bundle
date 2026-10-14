@@ -8,12 +8,17 @@ TOP=$(pwd)
 
 fetch "$BUSYBOX_URL" "$BUSYBOX_SHA256"
 BB=$WORK/busybox-$BUSYBOX_VERSION
-[ -d "$BB" ] || tar xjf "$DL/$(basename "$BUSYBOX_URL")" -C "$WORK"
+if [ ! -d "$BB" ]; then
+	tar xjf "$DL/$(basename "$BUSYBOX_URL")" -C "$WORK"
+	for p in "$TOP"/rootfs/busybox-patches/*.patch; do
+		patch -d "$BB" -p1 < "$p"
+	done
+fi
 
 cd "$BB"
 make allnoconfig >/dev/null
 # merge the fragment: drop every symbol it sets, then append it
-syms=$( (sed -n 's/^\(CONFIG_[A-Z0-9_]*\)=.*/\1/p' "$TOP/rootfs/busybox.fragment"; \
+syms=$( (sed -n 's/^\(# \)\{0,1\}\(CONFIG_[A-Z0-9_]*\)[= ].*/\2/p' "$TOP/rootfs/busybox.fragment"; \
 	echo CONFIG_CROSS_COMPILER_PREFIX) | paste -sd'|')
 grep -v -E "^(# )?($syms)( is not set|=)" .config > .config.tmp || true
 { cat .config.tmp; cat "$TOP/rootfs/busybox.fragment"; \
