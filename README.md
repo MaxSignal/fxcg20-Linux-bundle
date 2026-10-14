@@ -49,8 +49,7 @@ space on the kernel's `/dev/ncm`, and `tcp` asks it through named pipes.
 
 Tones come out of the 2.5 mm serial jack, for instance with
 `beep -f 440 -l 200`; the terminal bell beeps too. An earphone on a
-2.5-to-3.5 mm adapter plays them; the square wave is loud, a resistor
-in series (some 100 Ω to 1 kΩ) tames it.
+2.5-to-3.5 mm adapter plays them on its left side.
 
 ## Building
 
