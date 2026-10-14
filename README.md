@@ -43,6 +43,11 @@ curl -T notes.txt http://192.168.7.1/tmp/   # send a file
 The kernel has no networking: `ncmd` runs lwIP in user space on the
 kernel's `/dev/ncm`.
 
+## Sound
+
+Tones come out of the 3-pin port (tip and sleeve), for instance with
+`beep -f 440 -l 200`; the terminal bell beeps too.
+
 ## Building
 
 Debian/Ubuntu:
