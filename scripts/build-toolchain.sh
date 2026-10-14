@@ -69,8 +69,11 @@ fi
 # --- musl ---------------------------------------------------------------
 if [ ! -f "$SYSROOT/usr/lib/libc.a" ]; then
 	rm -rf b-musl && mkdir b-musl && cd b-musl
+	# oldmalloc: smaller, and without an MMU the guard pages of mallocng
+	# take real memory
 	../musl-$MUSL_VERSION/configure --target=$TARGET --prefix=/usr \
-		--disable-shared CC=$TARGET-gcc CROSS_COMPILE=$TARGET-
+		--disable-shared --with-malloc=oldmalloc \
+		CC=$TARGET-gcc CROSS_COMPILE=$TARGET-
 	make -j"$JOBS"
 	make DESTDIR="$SYSROOT" install
 	cd ..
