@@ -29,9 +29,9 @@ K=(make -C "$SRC" O="$B" ARCH=sh CROSS_COMPILE="$CROSS_COMPILE" -j"$JOBS")
 mkdir -p "$B"
 "${K[@]}" fxcg20_defconfig
 CONFIGS="$TOP/config/kernel.config"
-[ "$DEBUG" = 1 ] && CONFIGS="$CONFIGS $TOP/config/kernel-debug.config"
 if [ "$ROM" = 1 ]; then CONFIGS="$CONFIGS $TOP/config/kernel-rom.config"
 else CONFIGS="$CONFIGS $TOP/config/kernel-ram.config"; fi
+[ "$DEBUG" = 1 ] && CONFIGS="$CONFIGS $TOP/config/kernel-debug.config"
 "$SRC/scripts/kconfig/merge_config.sh" -m -O "$B" "$B/.config" $CONFIGS
 "$SRC/scripts/config" --file "$B/.config" --set-str INITRAMFS_SOURCE "$OUT/initramfs.list"
 "${K[@]}" olddefconfig
