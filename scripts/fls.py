@@ -2,11 +2,14 @@
 """Flash images with the fx-CG10/fx-CG20 storage memory (the FAT16 disk
 behind the Casio OS's flash translation layer), for the tests.
 
-  fls.py mkimage OUT [--base=IMAGE] [NAME=FILE...]
+  fls.py mkimage OUT [--base=IMAGE] [--free=N] [NAME=FILE...]
                             a 32 MiB flash image whose storage memory is a
                             FAT16 disk holding the files given (8.3 names,
                             root directory), the rest of the flash erased or
-                            taken from IMAGE: test input for the emulator
+                            taken from IMAGE: test input for the emulator.
+                            --free: only N sectors are left erased, the
+                            others hold old copies of a page, so that writing
+                            has to collect sectors
   fls.py check IMAGE        check every record and sector of the flash
                             translation layer, then the FAT16 disk on it
                             (with fsck.fat when there is one); list the files
@@ -138,7 +141,7 @@ def short_entry(name, attr, start, size):
     return e
 
 
-def mkimage(out, files=(), base=None):
+def mkimage(out, files=(), base=None, free=None):
     """A FAT16 disk with the geometry of the fx-CG20's storage memory, with
     files (name, data) in its root directory, in the storage area of a copy
     of the flash image base (erased if none); the rest of base is kept."""
@@ -183,6 +186,27 @@ def mkimage(out, files=(), base=None):
     pages = [p for p in range(NR_PAGES)
              if disk[p * SLOT:(p + 1) * SLOT] != b"\xff" * SLOT]
     sec, slot, seq = -1, NR_SLOTS, 0
+    count = 0xFFFFFFFE
+    if free is not None:
+        # sectors full of old copies of page 0; its copy below is the newest
+        stale = NR_SECTORS - free - (len(pages) + NR_SLOTS - 1) // NR_SLOTS
+        data = disk[0:SLOT]
+        rec = make_record(REC_DATA, 0, 0, data)
+        for sec in range(stale):
+            seq += 1
+            h = header(seq)
+            flash[sector_off(sec):sector_off(sec) + 24] = h
+            flash[record_off(sec, 0):record_off(sec, 0) + 64] = \
+                make_record(REC_HEADER, 0xFFFFFFFF, 0xFFFF, h)
+            for slot in range(NR_SLOTS):
+                flash[slot_off(sec, slot):slot_off(sec, slot) + SLOT] = data
+                r = bytearray(rec)
+                struct.pack_into(">I", r, 2, count)   # only the counter differs,
+                lp, cp = hamming(r[:34], 8)           # and the record's own code
+                r[37:40] = bytes([~cp & 0x3F | 0xC0, ~lp & 0xFF, ~(lp >> 8) & 0xFF])
+                flash[record_off(sec, slot + 1):record_off(sec, slot + 1) + 64] = r
+                count -= 1
+        slot = NR_SLOTS
     for p in pages:
         if slot == NR_SLOTS:
             sec, slot, seq = sec + 1, 0, seq + 1
@@ -193,7 +217,7 @@ def mkimage(out, files=(), base=None):
         data = disk[p * SLOT:(p + 1) * SLOT]
         flash[slot_off(sec, slot):slot_off(sec, slot) + SLOT] = data
         flash[record_off(sec, slot + 1):record_off(sec, slot + 1) + 64] = \
-            make_record(REC_DATA, 0xFFFFFFFE, p, data)
+            make_record(REC_DATA, count if p == 0 else 0xFFFFFFFE, p, data)
         slot += 1
     with open(out, "wb") as f:
         f.write(flash)
@@ -395,14 +419,16 @@ def fsck(fs):
 
 def main(argv):
     if len(argv) >= 2 and argv[0] == "mkimage":
-        base, files = None, []
+        base, files, free = None, [], None
         for arg in argv[2:]:
             if arg.startswith("--base="):
                 base = arg[7:]
+            elif arg.startswith("--free="):
+                free = int(arg[7:])
             else:
                 name, _, path = arg.partition("=")
                 files.append((name, open(path, "rb").read()))
-        mkimage(argv[1], files, base)
+        mkimage(argv[1], files, base, free)
         return 0
     if len(argv) < 2 or argv[0] not in ("check", "cat", "disk"):
         print(__doc__)

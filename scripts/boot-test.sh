@@ -84,7 +84,34 @@ echo "free memory with part of the kernel in the flash: $free KiB"
 run net 'cp /mnt/fls/ncmtest /tmp/t; /tmp/t /sbin/ncmd /tmp/n\n' "${rom[@]}" -flash "$OUT/rom-after.bin" -ins 8000000000
 grep -q '^PASS$' "$OUT/boot-test-net.log" || fail net "ncmtest"
 
-# 8. F6 removes the flash part
+# 8. the storage memory, written by linuxf.bin (part of the kernel runs
+# from the flash meanwhile) on a flash with only 8 erased storage sectors
+# left, so that it also collects (copies, logs and erases) sectors.
+# fls.py checks every record written and the FAT16 disk; nothing outside
+# the storage area may change.
+python3 scripts/fls.py mkimage "$OUT/fls-before.bin" --base="$OUT/rom-after.bin" --free=8 > /dev/null
+run fls 'mount -o remount,rw /mnt/fls;cd /mnt/fls;echo hello > a.txt;mkdir Dir;cp /bin/busybox Dir/LongFileName.bin;cp a.txt b.txt;mv b.txt Dir/;rm a.txt;echo more >> Dir/b.txt;sync;md5sum /bin/busybox Dir/*\n' \
+	"${rom[@]}" -flash "$OUT/fls-before.bin" -flash-out "$OUT/fls-after.bin" -ins 12000000000
+bb=$(sed -n 's|^\([0-9a-f]\{32\}\)  /bin/busybox$|\1|p' "$OUT/boot-test-fls.log")
+[ -n "$bb" ] || fail fls "md5sum /bin/busybox"
+grep -q "^$bb  Dir/LongFileName.bin" "$OUT/boot-test-fls.log" || fail fls "md5sum of the copy"
+python3 scripts/fls.py check "$OUT/fls-after.bin" > "$OUT/boot-test-fls-check.log" ||
+	{ cat "$OUT/boot-test-fls-check.log"; fail fls "the flash the kernel wrote"; }
+grep -qE "  $bb +[0-9]+ /Dir/LongFileName.bin$" "$OUT/boot-test-fls-check.log" ||
+	fail fls "the copy is not on the disk"
+grep -q "  $(printf 'hello\nmore\n' | md5sum | cut -d' ' -f1)       11 /Dir/b.txt$" \
+	"$OUT/boot-test-fls-check.log" || fail fls "Dir/b.txt"
+grep -q " /a.txt$" "$OUT/boot-test-fls-check.log" && fail fls "a.txt was not removed"
+grep -qE "erase log records: [1-9]" "$OUT/boot-test-fls-check.log" || fail fls "no sector was collected"
+cmp -n $((0xc80000)) "$OUT/fls-before.bin" "$OUT/fls-after.bin" > /dev/null ||
+	fail fls "the flash changed outside the storage area"
+
+# 9. and it is all there after a reset
+run fls-reread 'md5sum /mnt/fls/Dir/*;cat /mnt/fls/Dir/b.txt\n' "${rom[@]}" -flash "$OUT/fls-after.bin"
+grep -q "^$bb  /mnt/fls/Dir/LongFileName.bin" "$OUT/boot-test-fls-reread.log" || fail fls-reread "md5sum"
+grep -q '^more$' "$OUT/boot-test-fls-reread.log" || fail fls-reread "Dir/b.txt"
+
+# 10. F6 removes the flash part
 run rom-remove 'echo done\n' "${rom[@]}" -getkey 30014 -flash "$OUT/rom-after.bin" -flash-out "$OUT/rom-removed.bin"
 grep -q '^The flash part is removed.$' "$OUT/boot-test-rom-remove.log" || fail rom-remove "not removed"
 check_flash "$OUT/rom-before.bin" "$OUT/rom-removed.bin" - || fail rom-remove "the flash is not as before"

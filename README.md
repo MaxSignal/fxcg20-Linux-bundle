@@ -28,6 +28,18 @@ The flash part uses 0xc00000–0xc7ffff and 0xb20000–0xb3ffff of the NOR
 flash. Linux uses all of the RAM: back up the Main Memory first. To go
 back to the Casio OS, press RESET (or run `reboot`).
 
+## The storage memory
+
+The calculator's files are under `/mnt/fls`, read only at first:
+
+```sh
+mount -o remount,rw /mnt/fls
+cp notes.txt /mnt/fls/
+sync                # before a reset: changed pages wait in RAM until then
+```
+
+Linux writes them in the Casio OS's own format; names must be ASCII.
+
 ## Network over USB
 
 On a USB cable the calculator is a network adapter for the computer
