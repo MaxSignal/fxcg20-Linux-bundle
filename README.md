@@ -28,6 +28,21 @@ The flash part uses 0xc00000–0xc7ffff and 0xb20000–0xb3ffff of the NOR
 flash. Linux uses all of the RAM: back up the Main Memory first. To go
 back to the Casio OS, press RESET (or run `reboot`).
 
+## Network over USB
+
+On a USB cable the calculator is a network adapter for the computer
+(CDC NCM). The computer gets 192.168.7.2 by DHCP; the calculator is
+192.168.7.1:
+
+```sh
+telnet 192.168.7.1                          # a shell
+curl http://192.168.7.1/etc/profile         # a file, or a directory listing
+curl -T notes.txt http://192.168.7.1/tmp/   # send a file
+```
+
+The kernel has no networking: `ncmd` runs lwIP in user space on the
+kernel's `/dev/ncm`.
+
 ## Building
 
 Debian/Ubuntu:
@@ -36,6 +51,7 @@ Debian/Ubuntu:
 sudo apt install build-essential bison flex bc texinfo libgmp-dev libmpfr-dev \
                  libmpc-dev libssl-dev libelf-dev cpio python3 git curl
 scripts/build-toolchain.sh      # work/toolchain
+scripts/build-usbnet.sh         # out/ncmd (and its test on this machine)
 scripts/build-rootfs.sh         # out/busybox, out/initramfs.list
 scripts/build-kernel.sh         # out/linux.bin
 ROM=1 scripts/build-kernel.sh   # out/linuxf.bin, out/flash.bin
@@ -92,4 +108,4 @@ The bottom line of the screen shows the modifiers.
 
 ## Licence
 
-GPL-2.0.
+GPL-2.0. lwIP, which the build downloads, has its own BSD licence.

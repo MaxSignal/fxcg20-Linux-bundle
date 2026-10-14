@@ -1,8 +1,11 @@
 #!/bin/sh
 mount -t proc proc /proc
+mount -t devpts devpts /dev/pts
 mount -t tmpfs -o size=128k tmpfs /tmp
 # the Casio storage memory, read only
 mount -t fls fls /mnt/fls 2>/dev/null
+# the network over USB (192.168.7.1), when the kernel has /dev/ncm
+ncmd >/dev/null 2>&1 &
 
 # what the loader asked for (F2: install the flash part of linuxf.bin,
 # then reset to boot it; F6: remove it)

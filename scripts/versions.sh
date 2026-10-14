@@ -28,6 +28,9 @@
 : "${BUSYBOX_VERSION:=1.36.1}"
 : "${BUSYBOX_SHA256:=b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314}"
 : "${BUSYBOX_URL:=https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2}"
+: "${LWIP_VERSION:=2.2.1}"
+: "${LWIP_SHA256:=7b622662dba2383d71f874f2e494b54ae948531559c17acbe75797966d646878}"
+: "${LWIP_URL:=https://download.savannah.nongnu.org/releases/lwip/lwip-${LWIP_VERSION}.zip}"
 
 # DEBUG=1: bring-up build for real calculators. The kernel draws coloured
 # squares at the bottom right of the screen as it boots (yellow:

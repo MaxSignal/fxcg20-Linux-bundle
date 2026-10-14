@@ -36,7 +36,13 @@ run keys "\\c++\\c\\s$(printf '\003')echo awake\\n"
 grep -q '^awake$' "$OUT/boot-test-keys.log" || fail keys "no shell after waking up"
 grep -q 'R5A1: 50 ' "$OUT/boot-test-keys.log" || fail keys "backlight"
 
-# 4. EXE (F2) with flash.bin in the storage memory: linux.bin installs it.
+# 4. ncmd on the calculator against ncmtest, a host side made of lwIP
+# (the emulator has no USB): DHCP, telnet on a pseudo terminal, HTTP
+python3 scripts/fls.py mkimage "$OUT/net-flash.bin" ncmtest="$OUT/ncmtest" > /dev/null
+run net 'cp /mnt/fls/ncmtest /tmp/t; /tmp/t /sbin/ncmd /tmp\n' -flash "$OUT/net-flash.bin" -ins 8000000000
+grep -q '^PASS$' "$OUT/boot-test-net.log" || fail net "ncmtest"
+
+# 5. EXE (F2) with flash.bin in the storage memory: linux.bin installs it.
 # Only the two flash areas may change.
 python3 scripts/fls.py mkimage "$OUT/rom-before.bin" flash.bin="$OUT/flash.bin" > /dev/null
 rom=(-fls linuxf.bin="$OUT/linuxf.bin",flash.bin="$OUT/flash.bin")
@@ -64,15 +70,16 @@ PY
 }
 check_flash "$OUT/rom-before.bin" "$OUT/rom-after.bin" "$OUT/flash.bin" || fail rom-install "the flash"
 
-# 5. EXE (F2) boots linuxf.bin; nothing writes to the flash
-run rom 'free\n' "${rom[@]}" -flash "$OUT/rom-after.bin" -flash-writes
+# 6. EXE (F2) boots linuxf.bin; nothing writes to the flash; ncmd runs
+run rom 'free; cat /proc/[0-9]*/comm\n' "${rom[@]}" -flash "$OUT/rom-after.bin" -flash-writes
 log=$OUT/boot-test-rom.log
 grep -q '^==== flash writes: 0 ====$' "$log" || fail rom "something wrote to the flash"
+grep -q '^ncmd$' "$log" || fail rom "ncmd (network over USB) is not running"
 free=$(awk '$1=="Mem:"{f=$4} END{print f}' "$log")
 echo "free memory with part of the kernel in the flash: $free KiB"
 [ "${free:-0}" -gt 700 ] || fail rom "less free memory than expected"
 
-# 6. F6 removes the flash part
+# 7. F6 removes the flash part
 run rom-remove 'echo done\n' "${rom[@]}" -getkey 30014 -flash "$OUT/rom-after.bin" -flash-out "$OUT/rom-removed.bin"
 grep -q '^The flash part is removed.$' "$OUT/boot-test-rom-remove.log" || fail rom-remove "not removed"
 check_flash "$OUT/rom-before.bin" "$OUT/rom-removed.bin" - || fail rom-remove "the flash is not as before"

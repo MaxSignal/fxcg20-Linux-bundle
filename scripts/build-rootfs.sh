@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build BusyBox (static FDPIC) and the initramfs list the kernel embeds.
-# Output: $OUT/busybox, $OUT/initramfs.list
+# Output: $OUT/busybox, $OUT/initramfs.list (with $OUT/ncmd)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TOP=$(pwd)
@@ -43,7 +43,9 @@ if [ "$DEBUG" = 1 ]; then
 	inittab=$OUT/inittab
 	cat "$TOP/rootfs/etc/inittab" "$TOP/rootfs/debug/inittab" > "$inittab"
 fi
+[ -f "$OUT/ncmd" ] || { echo "run scripts/build-usbnet.sh first" >&2; exit 1; }
 sed -e "s|@ROOTFS@|$TOP/rootfs|g" -e "s|@BUSYBOX@|$OUT/busybox|g" \
+	-e "s|@NCMD@|$OUT/ncmd|g" \
 	-e "s|@LINKS@|$links|g" -e "s|@INITTAB@|$inittab|g" \
 	"$TOP/rootfs/initramfs.list.in" > "$OUT/initramfs.list"
 
