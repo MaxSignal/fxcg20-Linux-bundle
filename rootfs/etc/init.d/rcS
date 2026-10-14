@@ -30,4 +30,5 @@ echo "Welcome to Linux on the Casio fx-CG20!"
 uname -sr
 free | head -n 2
 echo "Keys: ALPHA=letters SHIFT=symbols OPTN=TAB EXE=Enter AC=^C"
+echo "MENU=Ctrl  MENU +/-=backlight  SHIFT AC=sleep, AC wakes up"
 echo

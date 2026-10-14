@@ -70,7 +70,7 @@ The bottom line of the screen shows the modifiers.
 | digits, `.` `+` `-` `×` `÷` `(` `)` `,` | themselves (`×` is `*`, `÷` is `/`) | `+` `[`, `-` `]`, `×` `{`, `÷` `}`, `.` `=` |
 | ×10ˣ | space | `"` |
 | (−) | `_` | `%` |
-| EXE / DEL / AC/ON | Enter / Backspace / Ctrl-C | – / Delete / Ctrl-D |
+| EXE / DEL / AC/ON | Enter / Backspace / Ctrl-C | – / Delete / sleep (AC/ON wakes up) |
 | arrows | cursor keys | Home, PgUp, PgDn, End |
 | F1–F6 | `\|` `>` `<` `&` `;` `$` | `~` `%` `` ` `` `'` `:` `"` |
 | X,θ,T / log / ln / sin / cos / tan | `=` `'` `"` `#` `!` `?` | |
@@ -79,7 +79,7 @@ The bottom line of the screen shows the modifiers.
 | **ALPHA** | next key types its red letter, lower case | |
 | SHIFT, ALPHA | letter lock (ALPHA again to leave) | |
 | x² | caps lock | |
-| MENU | next key with Ctrl (MENU, ALPHA, D is Ctrl-D) | |
+| MENU | next key with Ctrl (MENU, ALPHA, D is Ctrl-D); MENU `+` / `-`: backlight | |
 
 ## Related work
 

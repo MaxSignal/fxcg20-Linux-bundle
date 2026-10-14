@@ -31,7 +31,12 @@ grep -qE '^[0-9]+$' "$log" || fail shell "pipe into tmpfs"
 run vi 'vi /tmp/x\nihello calculator\e:wq\ncat /tmp/x\n'
 grep -q '^hello calculator$' "$OUT/boot-test-vi.log" || fail vi "the file was not written"
 
-# 3. EXE (F2) with flash.bin in the storage memory: linux.bin installs it.
+# 3. MENU + + (backlight up two steps), SHIFT AC/ON (sleep), AC/ON (wake up)
+run keys "\\c++\\c\\s$(printf '\003')echo awake\\n"
+grep -q '^awake$' "$OUT/boot-test-keys.log" || fail keys "no shell after waking up"
+grep -q 'R5A1: 50 ' "$OUT/boot-test-keys.log" || fail keys "backlight"
+
+# 4. EXE (F2) with flash.bin in the storage memory: linux.bin installs it.
 # Only the two flash areas may change.
 python3 scripts/fls.py mkimage "$OUT/rom-before.bin" flash.bin="$OUT/flash.bin" > /dev/null
 rom=(-fls linuxf.bin="$OUT/linuxf.bin",flash.bin="$OUT/flash.bin")
@@ -59,7 +64,7 @@ PY
 }
 check_flash "$OUT/rom-before.bin" "$OUT/rom-after.bin" "$OUT/flash.bin" || fail rom-install "the flash"
 
-# 4. EXE (F2) boots linuxf.bin; nothing writes to the flash
+# 5. EXE (F2) boots linuxf.bin; nothing writes to the flash
 run rom 'free\n' "${rom[@]}" -flash "$OUT/rom-after.bin" -flash-writes
 log=$OUT/boot-test-rom.log
 grep -q '^==== flash writes: 0 ====$' "$log" || fail rom "something wrote to the flash"
@@ -67,7 +72,7 @@ free=$(awk '$1=="Mem:"{f=$4} END{print f}' "$log")
 echo "free memory with part of the kernel in the flash: $free KiB"
 [ "${free:-0}" -gt 700 ] || fail rom "less free memory than expected"
 
-# 5. F6 removes the flash part
+# 6. F6 removes the flash part
 run rom-remove 'echo done\n' "${rom[@]}" -getkey 30014 -flash "$OUT/rom-after.bin" -flash-out "$OUT/rom-removed.bin"
 grep -q '^The flash part is removed.$' "$OUT/boot-test-rom-remove.log" || fail rom-remove "not removed"
 check_flash "$OUT/rom-before.bin" "$OUT/rom-removed.bin" - || fail rom-remove "the flash is not as before"
