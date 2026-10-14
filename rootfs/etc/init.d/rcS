@@ -5,20 +5,21 @@ mount -t tmpfs -o size=128k tmpfs /tmp
 # the Casio storage memory, read only
 mount -t fls fls /mnt/fls 2>/dev/null
 
-# what the loader asked for (F2: install the kernel that runs in place
-# from the flash, then start it; F6: remove it)
+# what the loader asked for (F2: install the flash part of linuxf.bin,
+# then reset to boot it; F6: remove it)
 case " $(cat /proc/cmdline) " in
 *" fxcg.boot=install "*)
-	echo "Installing Linux in the flash..."
-	if cat /mnt/fls/xip.bin > /dev/xipflash; then
-		echo "Installed. Starting it..."
-		echo -n fxcgBOOT > /dev/xipflash
+	echo "Installing flash.bin in the flash..."
+	if cat /mnt/fls/flash.bin > /dev/xipflash; then
+		echo "Installed. Resetting: run Linux again, F2 boots it."
+		sleep 3
+		reboot
 	fi
 	echo "The install failed (see dmesg)."
 	;;
 *" fxcg.boot=remove "*)
 	if echo -n fxcgRMV1 > /dev/xipflash; then
-		echo "Linux is removed from the flash."
+		echo "The flash part is removed."
 	else
 		echo "Removing it failed (see dmesg)."
 	fi

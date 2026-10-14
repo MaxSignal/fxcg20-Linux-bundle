@@ -74,14 +74,15 @@ jobs:
         run: |
           [ -n "$KERNEL_REF" ] || unset KERNEL_REF
           scripts/build-kernel.sh
-          scripts/build-xip.sh
+          ROM=1 scripts/build-kernel.sh
           git -C work/linux rev-parse HEAD > out/kernel.commit
       - uses: actions/upload-artifact@v4
         with:
           name: kernel
           path: |
             out/linux.bin
-            out/xip.bin
+            out/linuxf.bin
+            out/flash.bin
             out/kernel.release
             out/kernel.commit
             out/font6x8.h

@@ -1,114 +1,32 @@
 # fxcg20-linux-bundle
 
-Builds everything needed to run Linux on a Casio fx-CG10 / fx-CG20 (Prizm):
-the toolchain, the kernel with a BusyBox root filesystem built in, the
-same kernel and root file system made to run in place from the flash, and
-the loader add-in, boots them on an emulator, and zips the files to copy
-to the calculator. The fx-CG50 is not supported yet.
+Builds Linux for the Casio fx-CG10 / fx-CG20 (Prizm): the toolchain, the
+kernel with a BusyBox root file system, and the loader add-in.
 
 ![BusyBox on the emulated fx-CG20](docs/emulator-shell.png)
 
+## Files
+
 | File | |
 |---|---|
-| `fxcglinux.g3a` | Loader add-in, started from the main menu |
-| `linux.bin` | Kernel (zImage) with the BusyBox initramfs, loaded into RAM |
-| `xip.bin` | Kernel and romfs that run in place from the flash (optional, below) |
+| `fxcglinux.g3a` | Loader add-in |
+| `linux.bin` | Kernel, all in RAM |
+| `linuxf.bin` | Kernel with part of its code in the flash (RAM part) |
+| `flash.bin` | Flash part of `linuxf.bin` |
 
-They go to the root of the storage memory. The system is BusyBox 1.36
-(hush, vi, coreutils, `ps`, `free`, `mount`…) on Linux 7.2, with the LCD
-and the keyboard as the console. About 330 KiB of the 2 MiB of RAM are
-free once the shell is up with `linux.bin`, about 1.3 MiB with the kernel
-in the flash.
-
-> **Status:** everything boots on the emulator in CI, down to running a
-> command typed on the key matrix. It has not been tried on a real
-> calculator yet.
-
-## Components
-
-| | Repository | Branch |
-|---|---|---|
-| Kernel | [MaxSignal/linux](https://github.com/MaxSignal/linux) | `fxcg20-7.2.y` (Linux 7.2.y stable + SH7305 / fx-CG patches) |
-| Loader | [MaxSignal/fxcg-linux-loader](https://github.com/MaxSignal/fxcg-linux-loader) | `master` |
-| Emulator (tests) | [MaxSignal/casio-cg50](https://github.com/MaxSignal/casio-cg50) | `linux-direct-boot` |
-| Toolchain | built here (`scripts/build-toolchain.sh`): gcc 14.2, binutils 2.42, musl 1.2.4 | |
-
-Versions and download locations are in `scripts/versions.sh`; each can be
-overridden from the environment.
-
-Linux 7.2 always builds the scheduler's SMP load balancing and debug code,
-which makes it about 115 KiB larger than 6.12 for the same configuration.
-It only fits because the kernel branch lets SH link with `--gc-sections`
-(dead code and data elimination), which removes about 190 KiB of code that
-nothing calls in this configuration.
-
-## How it boots
-
-1. The loader reads `linux.bin` and stages it in the RAM the Casio OS leaves
-   to an add-in: the free part of the 512 KiB add-in RAM, blocks of the OS
-   heap, and the VRAM. The physical address of every page comes from the
-   UTLB.
-2. After **EXE**, a trampoline copied to the on-chip IL memory masks every
-   interrupt source, stops the timers and the watchdog, switches the MMU
-   off, invalidates the caches, gathers the pieces at 0x08040000 and jumps
-   to them.
-3. The zImage moves itself to the top of RAM and decompresses the kernel to
-   0x08002000 (`scripts/build-kernel.sh` computes that link address from the
-   image sizes, so that both fit in the 2 MiB).
-4. The kernel runs without the MMU. Its console draws text straight into
-   the R61524 LCD controller's memory and polls the SH7305 key scanner.
-5. The initramfs (gzip) holds one static FDPIC BusyBox with its applets as
-   hard links; `/sbin/init` mounts `/proc`, `/dev` and `/tmp` and starts
-   `hush`.
-
-There is no way back to the Casio OS except a reset (the button on the back,
-or `reboot`). Linux uses all of the RAM, so **the Main Memory may be lost:
-back the calculator up first.** The storage memory is never written.
-
-### The kernel in the flash
-
-The NOR flash has room the Casio OS does not use: between the end of the
-OS image (0x710000 with OS 02.02) and the language data at 0xb40000, it
-is erased. `xip.bin` puts the kernel and a romfs root file system there,
-and both run in place: the kernel's code and read-only data, and every
-program's code, stay in the flash; only writable data takes RAM. That
-leaves about 1.3 MiB of the 2 MiB free instead of 330 KiB.
-
-The loader's menu:
+Copy them to the root of the storage memory and run **Linux** from the
+main menu.
 
 | Key | |
 |---|---|
-| **F1** | boot `linux.bin` (in RAM) |
-| **F2** | boot the kernel in the flash. When it is not there yet, or `xip.bin` in the storage memory is a different one, `linux.bin` boots first, writes it (`cat /mnt/fls/xip.bin > /dev/xipflash`) and starts it |
-| **F6** | boot `linux.bin` to remove it: the flash is erased again, as it was |
-| EXE | F2 if there is something to boot or install there, F1 otherwise |
+| F1 | Boot `linux.bin` |
+| F2 | Boot `linuxf.bin`. If its flash part is not installed yet, `linux.bin` installs `flash.bin` first and resets; run Linux again. |
+| F6 | Remove the flash part |
+| EXE | F2 if available, otherwise F1 |
 
-The loader itself never writes to the flash: its own code and the Casio
-OS run from it. Linux, running from RAM, does (`/dev/xipflash`), and only
-ever erases sectors that are already erased or that hold its own image;
-anything else makes it stop before the flash is touched. Its two headers
-(at both ends of the image) keep an install that is cut short
-recoverable: installing again works. A Casio OS update may erase the
-image; nothing else uses that part of the flash.
-
-Layout, packed downwards from 0xb40000 (`scripts/mkxip.py`): a header in
-the last 256 bytes, the kernel on a 128 KiB sector, the romfs below it,
-and a copy of the header at the start of the image. Only the start
-moves with the sizes: the kernel is linked where its size puts it, the
-romfs and the FDPIC programs in it run wherever they are.
-
-### Fitting in 2 MiB
-
-- nommu: no page tables; programs are FDPIC and run in place from the
-  initramfs, so BusyBox must be one physically contiguous block (the build
-  checks it stays under 256 KiB). The kernel allocates its early memory
-  bottom-up to keep the top of RAM free for it.
-- The initramfs is compressed, so that the compressed image and the
-  unpacked files fit at the same time.
-- No framebuffer: the console renders text cells directly into the LCD.
-- The kernel is linked with `--gc-sections` (.text 883 KiB down to 695 KiB).
-- perf, hardware breakpoints, sysfs, block layer and networking are left
-  out, and `min_free_kbytes` gets a lower floor on small nommu systems.
+The flash part uses 0xc00000–0xc7ffff and 0xb20000–0xb3ffff of the NOR
+flash. Linux uses all of the RAM: back up the Main Memory first. To go
+back to the Casio OS, press RESET (or run `reboot`).
 
 ## Building
 
@@ -117,67 +35,31 @@ Debian/Ubuntu:
 ```sh
 sudo apt install build-essential bison flex bc texinfo libgmp-dev libmpfr-dev \
                  libmpc-dev libssl-dev libelf-dev cpio python3 git curl
-scripts/build-toolchain.sh  # work/toolchain (20-40 minutes, once)
-scripts/build-rootfs.sh     # out/busybox, out/initramfs.list
-scripts/build-kernel.sh     # out/linux.bin (needs the rootfs)
-scripts/build-xip.sh        # out/xip.bin: kernel + romfs in place (needs the rootfs)
-scripts/build-loader.sh     # out/fxcglinux.g3a
-scripts/boot-test.sh        # boot test on the emulator (needs Go)
-scripts/package.sh          # out/fxcg20-linux-<kernel>.zip
-scripts/release-notes.sh    # out/release-notes.md
+scripts/build-toolchain.sh      # work/toolchain
+scripts/build-rootfs.sh         # out/busybox, out/initramfs.list
+scripts/build-kernel.sh         # out/linux.bin
+ROM=1 scripts/build-kernel.sh   # out/linuxf.bin, out/flash.bin
+scripts/build-loader.sh         # out/fxcglinux.g3a
+scripts/boot-test.sh            # boot test on the emulator (needs Go)
+scripts/package.sh              # out/fxcg20-linux-<kernel>.zip
 ```
 
-`KERNEL_SRC` / `LOADER_SRC` / `EMU_SRC` select local source trees instead
-of cloning; `OUT`, `WORK` and `TOOLCHAIN` move the output, work and
-toolchain directories.
+Sources and versions are in `scripts/versions.sh`. `KERNEL_SRC`,
+`LOADER_SRC` and `EMU_SRC` select local trees.
 
-`DEBUG=1` (for `build-kernel.sh` and `package.sh`) makes a bring-up build
-whose kernel shows how far the boot got before the console starts, as
-squares at the bottom right of the screen: yellow while the zImage
-decompresses, green once it is done, white when the kernel reaches the
-board setup, red if decompression fails. The console clears them when it
-starts. The ZIP is named `*-debug`.
+`DEBUG=1` builds show the boot progress at the bottom right of the screen
+and give a shell over USB (CDC ACM).
 
-Debug builds also have a shell for the computer on the USB cable: the
-kernel has the USB serial gadget (CDC ACM, `/dev/ttyACM0` on Linux
-computers) and `/sbin/usb-shell` waits on it; press Enter on the computer
-side to get a shell. It costs some 140 KiB of RAM, which is why normal
-builds go without it. The calculator's USB storage mode, on the other
-hand, only works on Linux computers with transfers of at most 4 KiB
-(`echo 4 > /sys/block/sdX/queue/max_sectors_kb`).
+Copying files to the calculator over USB from Linux needs
+`echo 4 > /sys/block/sdX/queue/max_sectors_kb`.
 
-The GitHub Actions workflow (`.github/workflows/build.yml`) does the same on
-every push, keeps the ZIP as an artifact, and makes a release for each build
-of `main` (tag `build-<run number>`) and each pushed `v*` tag.
+## Components
 
-### The emulator
-
-The boot test uses [casio-cg50](https://github.com/hexbinoct/casio-cg50), an
-SH7305 emulator that models the INTC, TMU, KEYSC, CPG and the R61524 LCD.
-The `linux-direct-boot` branch adds a bare-metal fx-CG20 machine (2 MiB at
-0x08000000, no Casio OS), the SH-4A instructions and exceptions Linux needs,
-and an add-in runner that emulates the handful of OS syscalls the loader
-uses. It reads the screen back as text with the kernel's font. To play with
-it:
-
-```sh
-work/cgemu linux -g3a out/fxcglinux.g3a -file out/linux.bin -font out/font6x8.h \
-    -ins 2000000000 -type 'ls -l /bin\n' -png screen.png
-```
-
-`-type` is typed with the key layout below (`\n` is EXE, `\t` OPTN, `\e`
-EXIT), `-v` prints the screen as it changes, and `-kernel out/linux.bin`
-starts the kernel without the loader. `-flash FILE` loads a 32 MiB flash
-image (`scripts/fls.py mkimage` makes one whose storage memory holds given
-files), `-flash-out FILE` saves the flash at the end, `-flash-writes`
-reports any write to it, `-fls NAME=FILE` gives the loader more files and
-`-getkey` the keys it reads (key codes; EXE once they are used up).
-
-`scripts/boot-test.sh` boots five times: to run shell commands, to edit a
-file with `vi`, to install `xip.bin` from the storage memory (the flash
-must then hold it and be unchanged elsewhere), to boot it (programs must
-run from the flash, nothing may write to it, more than 1 MiB must be
-free), and to remove it (the flash must be as before the install).
+| | Repository | Branch |
+|---|---|---|
+| Kernel | [MaxSignal/linux](https://github.com/MaxSignal/linux) | `fxcg20-7.2.y` |
+| Loader | [MaxSignal/fxcg-linux-loader](https://github.com/MaxSignal/fxcg-linux-loader) | `master` |
+| Emulator | [MaxSignal/casio-cg50](https://github.com/MaxSignal/casio-cg50) | `linux-direct-boot` |
 
 ## Keys
 
@@ -199,24 +81,15 @@ The bottom line of the screen shows the modifiers.
 | x² | caps lock | |
 | MENU | next key with Ctrl (MENU, ALPHA, D is Ctrl-D) | |
 
-For instance `ls` is `ALPHA` `→` `ALPHA` `×` `EXE`.
-
 ## Related work
 
-- [gint](https://git.planet-casio.com/Lephenixnoir/gint) by Lephenixnoir, and
-  the [casio-cg50](https://github.com/hexbinoct/casio-cg50) emulator by
-  hexbinoct: SH7305 hardware documentation this port relies on.
-- [linux-fx9750giii](https://github.com/cacioandpepe/linux-fx9750giii) by
-  Artem Novak: SH7305 kernel work for the fx-9750GIII, and the upstream
-  SH7305 patches on the kernel mailing list.
-- [LinuX-CG50](https://github.com/Squaresweets/LinuX-CG50): Linux on an
-  emulated RISC-V CPU (mini-rv32ima) as an fx-CG50 add-in, which runs out of
-  RAM; this bundle runs Linux natively on the SH7305 instead.
-- [stm32h7-linux](https://github.com/rota1001/stm32h7-linux): Linux with
-  FDPIC BusyBox on an STM32H750 with 1 MiB of RAM.
-- [nspire-Linux-bundle](https://github.com/MaxSignal/nspire-Linux-bundle):
-  the same kind of bundle for the TI-Nspire.
+- [gint](https://git.planet-casio.com/Lephenixnoir/gint)
+- [casio-cg50](https://github.com/hexbinoct/casio-cg50)
+- [linux-fx9750giii](https://github.com/cacioandpepe/linux-fx9750giii)
+- [LinuX-CG50](https://github.com/Squaresweets/LinuX-CG50)
+- [stm32h7-linux](https://github.com/rota1001/stm32h7-linux)
+- [nspire-Linux-bundle](https://github.com/MaxSignal/nspire-Linux-bundle)
 
 ## Licence
 
-The scripts and configuration are GPL-2.0, like the kernel.
+GPL-2.0.

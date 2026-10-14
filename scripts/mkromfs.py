@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Make a romfs image from a gen_init_cpio list (the initramfs.list the
-build writes): the root file system that the XIP kernel mounts in place
-from the flash, so that programs run straight from it.
+build writes).
 
   mkromfs.py LIST OUT
 

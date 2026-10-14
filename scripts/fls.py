@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-"""The Casio fx-CG10/fx-CG20 storage memory: the FAT16 disk the Casio OS
-keeps in the NOR flash behind its flash translation layer, which Linux's
-"fls" file system reads (arch/sh/boards/mach-fxcg/storage.c). The format
-of its records (CRC-16 and Hamming codes, erase log) was worked out from
-the data in flash dumps only: every record of a real fx-CG20's flash is
-rebuilt byte for byte by make_record(). For the tests: images with given
-files in the storage memory, and checks of an image.
+"""Flash images with the fx-CG10/fx-CG20 storage memory (the FAT16 disk
+behind the Casio OS's flash translation layer), for the tests.
 
   fls.py mkimage OUT [--base=IMAGE] [NAME=FILE...]
                             a 32 MiB flash image whose storage memory is a

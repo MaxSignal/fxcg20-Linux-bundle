@@ -1,7 +1,6 @@
 /*
  * flashdump: send the calculator's NOR flash to the computer on the USB
- * cable (DEBUG=1 builds; run from the USB shell, see tools/calc-flashdump.py
- * in the workspace).
+ * cable (DEBUG=1 builds; run from the USB shell).
  *
  *   flashdump [OFFSET [LENGTH]]	(bytes, default: all 32 MiB)
  *
